@@ -30,10 +30,10 @@ UKF::UKF() {
   P_ = MatrixXd::Identity(n_x_, n_x_);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 4;
+  std_a_ = 0.2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 0.1;
+  std_yawdd_ = 0.2;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -60,7 +60,7 @@ UKF::UKF() {
   Hint: one or more values initialized above might be wildly off...
   */
 
-  lambda_ = 3;
+  lambda_ = 3 - n_x_;
 
   Xsig_pred_ = MatrixXd(n_x_, 1+2*n_aug_);
 
@@ -93,8 +93,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   if (!is_initialized_) {
     // initialize
-    time_us_ = meas_package.timestamp_;
-
     if (meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER) {
       x_(0) = meas_package.raw_measurements_(0);
       x_(1) = meas_package.raw_measurements_(1);
@@ -107,8 +105,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(0) = rho*cos_phi;
       x_(1) = rho*sin_phi;
     }
-    x_(2) = 1;
+    x_(2) = 0;
 
+    time_us_ = meas_package.timestamp_;
     is_initialized_ = true;
     return;
   }
@@ -116,10 +115,14 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   if (use_laser_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER) {
     // update laser
     double dt = (meas_package.timestamp_ - time_us_) / 1000000.0;
+    time_us_ = meas_package.timestamp_;
+
     Prediction(dt);
   } else if (use_radar_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR) {
     // update radar
     double dt = (meas_package.timestamp_ - time_us_) / 1000000.0;
+    time_us_ = meas_package.timestamp_;
+
     Prediction(dt);
 
     UpdateRadar(meas_package);
@@ -295,9 +298,14 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     double v2 = sin(yaw)*v;
 
     // measurement model
-    Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);                        //r
-    Zsig(1,i) = atan2(p_y,p_x);                                 //phi
-    Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
+    if (fabs(p_x) > 0.001 || fabs(p_y) > 0.001) {
+      Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);                        //r
+      Zsig(1,i) = atan2(p_y,p_x);                                 //phi
+      Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
+    } else {
+      Zsig.col(i).fill(0.0);
+    }
+
   }
 
   //mean predicted measurement
